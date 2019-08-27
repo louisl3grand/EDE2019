@@ -1,6 +1,7 @@
 from matplotlib import pyplot
 import scipy
 from scipy import stats,random,special,optimize,linalg,constants
+from scipy.spatial.distance import pdist
 import emcee
 import corner
 import logging
@@ -169,9 +170,26 @@ class LatinHypercubeEstimator(BaseEstimator):
 			self._xp[:, ipt] = (self._xp[:, ipt]) * (self.ranges[1] - self.ranges[0]) + self.ranges[0]
 		self._xp = self._xp.T
 
+	def optim_lhssample(self):
+		self.logger.info('Find optimum LHS.')
+		ntest = 1000
+		xx = np.zeros([self.ndim, self.ndim])
+		max_minlength = 0
+		for i in range(ntest):
+			xx = scipy.random.uniform(size=[self.ndim, self.npts])
+			for idim in range(0, self.ndim):
+				xx[idim] = (scipy.argsort(xx[idim])+0.5)/self.npts
+			lenght = min(pdist(xx.T))
+			if lenght > max_minlength:
+				max_minlength = lenght
+				self._xp = xx
+				break
+
+
 	def __call__(self):
 
-		self.lhssample()
+		# self.lhssample()
+		self.optim_lhssample()
 		self._yp = scipy.array(map(self.likelihood.delta_chi2,self._xp))
 		self.logger.info('Fitting Gaussian...')
 		self.precision = self._fit_gaussian_(self._xp,self._yp)
@@ -233,7 +251,7 @@ class SliceEstimator(BaseEstimator):
 				self.xp['u_%s-u_%s-%s' % (iaxis1,iaxis2,nsigmas)] = self._xp[-1]
 				self.yp['u_%s-u_%s-%s' % (iaxis1,iaxis2,nsigmas)] = self._yp[-1]
 				# Add also the symetrical point
-				opposite = scipy.copy(self._xp[-1]);
+				opposite = scipy.copy(self._xp[-1])
 				opposite[iaxis1] = 2.*argmax1 - self._xp[-1][iaxis1]
 				opposite[iaxis2] = 2.*argmax2 - self._xp[-1][iaxis2]
 				self.xp['d_%s-d_%s-%s' % (iaxis1,iaxis2,nsigmas)] = opposite
@@ -245,9 +263,9 @@ class SliceEstimator(BaseEstimator):
 				self.xp['u_%s-d_%s-%s' % (iaxis1,iaxis2,nsigmas)] = self._xp[-1]
 				self.yp['u_%s-d_%s-%s' % (iaxis1,iaxis2,nsigmas)] = self._yp[-1]
 				# Add also the symetrical point
-				opposite = scipy.copy(self._xp[-1]);
-				opposite[iaxis1] = 2.*argmax1 - self._xp[-1][iaxis1];
-				opposite[iaxis2] = 2.*argmax2 - self._xp[-1][iaxis2];
+				opposite = scipy.copy(self._xp[-1])
+				opposite[iaxis1] = 2.*argmax1 - self._xp[-1][iaxis1]
+				opposite[iaxis2] = 2.*argmax2 - self._xp[-1][iaxis2]
 				self.xp['d_%s-u_%s-%s' % (iaxis1,iaxis2,nsigmas)] = opposite
 				self.yp['d_%s-u_%s-%s' % (iaxis1,iaxis2,nsigmas)] = self._delta_chi2_(opposite)
 
