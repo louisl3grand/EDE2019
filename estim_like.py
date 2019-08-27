@@ -173,7 +173,7 @@ class LatinHypercubeEstimator(BaseEstimator):
 	def optim_lhssample(self):
 		self.logger.info('Find optimum LHS.')
 		ntest = 1000
-		xx = np.zeros([self.ndim, self.ndim])
+		xx = scipy.zeros([self.ndim, self.ndim])
 		max_minlength = 0
 		for i in range(ntest):
 			xx = scipy.random.uniform(size=[self.ndim, self.npts])
@@ -182,7 +182,7 @@ class LatinHypercubeEstimator(BaseEstimator):
 			lenght = min(pdist(xx.T))
 			if lenght > max_minlength:
 				max_minlength = lenght
-				self._xp = xx
+				self._xp = xx.T
 				break
 
 
