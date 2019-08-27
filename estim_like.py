@@ -95,8 +95,9 @@ class BaseEstimator(object):
 
 	def _fit_gaussian_(self,xp,yp,pini=None):
 		# to be improved...
-		
+
 		np = len(xp)
+		self.logger.info('We use {} points for the fit.'.format(np))
 		precision = scipy.zeros((self.ndim,self.ndim))
 
 		def cost(p):
@@ -132,19 +133,19 @@ class BaseEstimator(object):
 					else:
 						pini.append(0.)
 		optimize.minimize(cost,pini,method='Nelder-Mead',options={'maxiter':100000})
-		
+
 		return precision
 
 
 
 class FisherEstimator(BaseEstimator):
-	
+
 	logger = logging.getLogger('FisherEstimator')
-	
+
 	def __init__(self,likelihood,**kwargs):
 		super(SliceEstimator,self).__init__(likelihood=likelihood,**kwargs)
 		self._xp,self._yp = [],[] # will contain all points where the likelihood is evaluated
-	
+
 
 class LatinHypercubeEstimator(BaseEstimator):
 	# Sample the parameter space with a latin hypercube sampling, and fit gaussians
@@ -159,6 +160,7 @@ class LatinHypercubeEstimator(BaseEstimator):
 		self._xp, self._yp = [], [] # will contain all points sampled by the LHS
 
 	def lhssample(self):
+		self.logger.info('Generate one realization of the LHS.')
 		self._xp = scipy.random.uniform(size=[self.ndim, self.npts])
 		for idim in range(0, self.ndim):
 			self._xp[idim] = (scipy.argsort(self._xp[idim])+0.5)/self.npts
@@ -170,8 +172,8 @@ class LatinHypercubeEstimator(BaseEstimator):
 	def __call__(self):
 
 		self.lhssample()
-		self._yp = scipy.array(map(self.likelihood.delta_chi2,self._xp)) 
-
+		self._yp = scipy.array(map(self.likelihood.delta_chi2,self._xp))
+		self.logger.info('Fitting Gaussian...')
 		self.precision = self._fit_gaussian_(self._xp,self._yp)
 		return Likelihood.Gaussian(mean=self.likelihood.argmax,precision=self.precision)
 
