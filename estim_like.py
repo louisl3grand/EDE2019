@@ -179,11 +179,10 @@ class LatinHypercubeEstimator(BaseEstimator):
 			xx = scipy.random.uniform(size=[self.ndim, self.npts])
 			for idim in range(0, self.ndim):
 				xx[idim] = (scipy.argsort(xx[idim])+0.5)/self.npts
-			lenght = min(pdist(xx.T))
+			lenght = min(pdist(xx.T))  # min of the distances bewteen all pairs of points
 			if lenght > max_minlength:
 				max_minlength = lenght
 				self._xp = xx.T
-				break
 
 
 	def __call__(self):
@@ -336,6 +335,10 @@ def plot_ellipses(sampler,discard=5000,gaussians=None):
 def squeezed_lnlkl(self,x):
 	diff = x - self.mean
 	precision = self.precision.copy()
+	# try:
+	# 	cho = linalg.cholesky(precision)
+	# except:
+	# 	return scipy.inf
 	factor = scipy.sqrt(1 + scipy.absolute(x[1] - self.mean[1])**1.)
 	precision[0, :] *= factor
 	precision[:, 0] *= factor
