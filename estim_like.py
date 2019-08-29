@@ -336,21 +336,17 @@ class SliceEstimator(BaseEstimator):
 		return Likelihood.Gaussian(mean=self.likelihood.argmax,precision=precision)
 
 
-def plot_ellipses(sampler,discard=5000,gaussians=[],labels=[]):
+def plot_ellipses(sampler,discard=5000,gaussians=[],labels=[],nsigmas=[1.,2.],colors = pyplot.rcParams['axes.prop_cycle'].by_key()['color']):
 
 	# Compare the deduced Fisher ellipse to the input one
-	# sigs_ellipse = scipy.array([1., 2.])
-	sigs_ellipse = scipy.array([2.])
-	al = scipy.sqrt(stats.chi2.ppf(special.erf(sigs_ellipse / scipy.sqrt(2.)), 2))
+	al = scipy.sqrt(stats.chi2.ppf(special.erf(scipy.array(nsigmas) / scipy.sqrt(2.)), 2))
 	t = scipy.linspace(0., 2. * constants.pi, 1000, endpoint=False)[:, None]
 	ct = scipy.cos(t)
 	st = scipy.sin(t)
 
-	levels = map(level,sigs_ellipse)
+	levels = map(level,nsigmas)
 	chain = sampler.get_chain(flat=True,discard=discard)
 	fig = corner.corner(chain,levels=levels,plot_datapoints=False,plot_density=False,bins=100)
-	# colors = ['red', 'blue', 'green']
-	colors = pyplot.rcParams['axes.prop_cycle'].by_key()['color']
 	for igauss,gaussian in enumerate(gaussians):
 		axs = fig.axes
 		covariance = gaussian.covariance
@@ -390,19 +386,14 @@ def squeezed_lnlkl(self,x):
 	return -1./2.*diff.dot(precision).dot(diff)
 
 def squeezed_lnlkl_2(self,x):
-	# diff = (x - self.mean)**2
-	xx = x.copy()
-	xx[0] = x[0]*x[1]
-	xx[1] = x[0]/(x[1]+10.)
-	diff = xx - self.mean
+	x = x.copy()
+	diff = x - self.mean
+	diff[1] *= scipy.arctan(diff[1])
 	precision = self.precision.copy()
 	# try:
 	# 	cho = linalg.cholesky(precision)
 	# except:
 	# 	return scipy.inf
-	factor = scipy.sqrt(1 + scipy.absolute(x[1] - self.mean[1])**1.)
-	precision[0, :] *= factor
-	precision[:, 0] *= factor
 	return -1./2.*diff.dot(precision).dot(diff)
 
 
@@ -418,10 +409,10 @@ if __name__ == '__main__':
 	# covariance = scipy.eye(ndim)
 	# likelihood = Likelihood.Gaussian(mean=mean,covariance=covariance)
 	# likelihood.lnlkl = lambda x: squeezed_lnlkl(likelihood,x) # I give a name to my lambda function and I don't care
-	# likelihood.lnlkl = lambda x: squeezed_lnlkl_2(likelihood,x) # I give a name to my lambda function and I don't care
+	likelihood.lnlkl = lambda x: squeezed_lnlkl_2(likelihood,x) # I give a name to my lambda function and I don't care
 
 	fisher_estimator = FisherEstimator(likelihood=likelihood)
-	fisher_estimation = fisher_estimator(step=0.2)
+	fisher_estimation = fisher_estimator(step=0.1)
 
 	slice_estimator = SliceEstimator(likelihood=likelihood)
 	slice_estimation = slice_estimator(nsigmas=[1.])
@@ -435,8 +426,8 @@ if __name__ == '__main__':
 
 	gauss_estimation = lhs_estimator(sampling='gaussian', fisher_estimation=fisher_estimation)
 
-	sampler = likelihood.sample(nsteps=int(1e4))
-	plot_ellipses(sampler,gaussians=[fisher_estimation,slice_estimation,lhs_estimation, gauss_estimation],labels=['Fisher','Slice','LHS', 'Gauss Sampling'],discard=500)
+	sampler = likelihood.sample(nsteps=int(5e3))
+	plot_ellipses(sampler,gaussians=[fisher_estimation,slice_estimation,lhs_estimation, gauss_estimation],labels=['Fisher','Slice','LHS', 'Gauss Sampling'],discard=500,nsigmas=[1.])
+	#plot_ellipses(sampler,gaussians=[slice_estimation],labels=['Slice'],discard=500,nsigmas=[1.])
 	#plot_ellipses(sampler,gaussians=[fisher_estimation],discard=500)
-	# plot_ellipses(sampler,gaussian=slice_estimation,discard=500)
 	pyplot.show()
