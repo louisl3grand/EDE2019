@@ -32,7 +32,7 @@ class Likelihood(object):
 		else:
 			self.covariance = covariance
 			self.precision = linalg.inv(self.covariance)
-		
+
 		assert scipy.allclose(self.precision.dot(self.covariance),scipy.eye(self.ndim),rtol=1e-05,atol=1e-08)
 
 		def lnlkl(x):
@@ -157,7 +157,7 @@ class FisherEstimator(BaseEstimator):
 	def __init__(self,likelihood,**kwargs):
 		super(FisherEstimator,self).__init__(likelihood=likelihood,**kwargs)
 		self._xp,self._yp = [],[] # will contain all points where the likelihood is evaluated
-	
+
 	def __call__(self,step=0.1):
 		argmax = self.likelihood.argmax
 		fisher = scipy.zeros((self.ndim,self.ndim))
@@ -199,25 +199,39 @@ class LatinHypercubeEstimator(BaseEstimator):
 			self._xp[:, ipt] = (self._xp[:, ipt]) * (self.ranges[1] - self.ranges[0]) + self.ranges[0]
 		self._xp = self._xp.T
 
-	def optim_lhssample(self):
+	def optim_lhssample(self, ntest=1000):
 		self.logger.info('Find optimum LHS.')
-		ntest = 1000
-		xx = scipy.zeros([self.ndim, self.ndim])
+		# xx = scipy.zeros([self.ndim, self.ndim])
 		max_minlength = 0
 		for i in range(ntest):
 			xx = scipy.random.uniform(size=[self.ndim, self.npts])
 			for idim in range(0, self.ndim):
 				xx[idim] = (scipy.argsort(xx[idim])+0.5)/self.npts
-			lenght = min(pdist(xx.T))  # min of the distances bewteen all pairs of points
-			if lenght > max_minlength:
-				max_minlength = lenght
+			length = min(pdist(xx.T))  # min of the distances bewteen all pairs of points
+			if length > max_minlength:
+				max_minlength = length
 				self._xp = xx.T
 
+	def gaussian_sample(self, mean, cov, ntest):
+		self.logger.info('Find optimum Gaussian sampling.')
+		xx = scipy.zeros([self.ndim, self.ndim])
+		max_minlength = 0
+		for i in range(ntest):
+			xx = scipy.random.multivariate_normal(mean, cov, size=self.npts)
+			lenght = min(pdist(xx))  # min of the distances bewteen all pairs of points
+			if lenght > max_minlength:
+				max_minlength = lenght
+				self._xp = xx
 
-	def __call__(self):
+	def __call__(self, sampling='lhs', fisher_estimation=None):
+		ntest = 500
+		if sampling == 'lhs':
+			self.lhssample()
+		elif sampling == 'optim_lhs':
+			self.optim_lhssample(ntest=ntest)
+		elif sampling == 'gaussian':
+			self.gaussian_sample(mean=fisher_estimation.argmax, cov=fisher_estimation.covariance, ntest=ntest)
 
-		# self.lhssample()
-		self.optim_lhssample()
 		self._yp = scipy.array(map(self.likelihood.delta_chi2,self._xp))
 		self.logger.info('Fitting Gaussian...')
 		precision = self._fit_gaussian_(self._xp,self._yp)
@@ -325,7 +339,8 @@ class SliceEstimator(BaseEstimator):
 def plot_ellipses(sampler,discard=5000,gaussians=[],labels=[]):
 
 	# Compare the deduced Fisher ellipse to the input one
-	sigs_ellipse = scipy.array([1., 2.])
+	# sigs_ellipse = scipy.array([1., 2.])
+	sigs_ellipse = scipy.array([2.])
 	al = scipy.sqrt(stats.chi2.ppf(special.erf(sigs_ellipse / scipy.sqrt(2.)), 2))
 	t = scipy.linspace(0., 2. * constants.pi, 1000, endpoint=False)[:, None]
 	ct = scipy.cos(t)
@@ -334,7 +349,8 @@ def plot_ellipses(sampler,discard=5000,gaussians=[],labels=[]):
 	levels = map(level,sigs_ellipse)
 	chain = sampler.get_chain(flat=True,discard=discard)
 	fig = corner.corner(chain,levels=levels,plot_datapoints=False,plot_density=False,bins=100)
-	colors = ['red', 'blue', 'green']
+	# colors = ['red', 'blue', 'green']
+	colors = pyplot.rcParams['axes.prop_cycle'].by_key()['color']
 	for igauss,gaussian in enumerate(gaussians):
 		axs = fig.axes
 		covariance = gaussian.covariance
@@ -345,7 +361,7 @@ def plot_ellipses(sampler,discard=5000,gaussians=[],labels=[]):
 					hist = scipy.histogram(chain[:, iaxis1], bins=100)
 					x = scipy.linspace(hist[1][0],hist[1][-1],1001)
 					y = scipy.exp(-(x-gaussian.mean[iaxis1])**2./2./covariance[iaxis1,iaxis1])
-					axs[ix].plot(x,y*hist[0].max(),color=colors[igauss],label=labels[igauss],ls='--')
+					axs[ix].plot(x,y*hist[0].max(),color=colors[igauss],label=labels[igauss],ls='-')
 				elif iaxis1 > iaxis2:
 					sigx2 = covariance[iaxis2,iaxis2]
 					sigy2 = covariance[iaxis1,iaxis1]
@@ -355,7 +371,7 @@ def plot_ellipses(sampler,discard=5000,gaussians=[],labels=[]):
 					th = 0.5 * scipy.arctan2(2. * sigxy, sigx2 - sigy2)
 					x = gaussian.mean[iaxis2] + a * ct * scipy.cos(th) - b * st * scipy.sin(th)
 					y = gaussian.mean[iaxis1] + a * ct * scipy.sin(th) + b * st * scipy.cos(th)
-					axs[ix].plot(x,y,color=colors[igauss],ls='--')
+					axs[ix].plot(x,y,color=colors[igauss],ls='-')
 				else:
 					axs[ix].axis('off')
 				ix += 1
@@ -373,26 +389,36 @@ def squeezed_lnlkl(self,x):
 	precision[:, 0] *= factor
 	return -1./2.*diff.dot(precision).dot(diff)
 
+def squeezed_lnlkl_2(self,x):
+	# diff = (x - self.mean)**2
+	xx = x.copy()
+	xx[0] = x[0]*x[1]
+	xx[1] = x[0]/(x[1]+10.)
+	diff = xx - self.mean
+	precision = self.precision.copy()
+	# try:
+	# 	cho = linalg.cholesky(precision)
+	# except:
+	# 	return scipy.inf
+	factor = scipy.sqrt(1 + scipy.absolute(x[1] - self.mean[1])**1.)
+	precision[0, :] *= factor
+	precision[:, 0] *= factor
+	return -1./2.*diff.dot(precision).dot(diff)
+
+
 
 if __name__ == '__main__':
 
 	logging.basicConfig(level=logging.INFO)
 
-	likelihood = Likelihood.GaussianRandom(ndim=3,seed=42)
+	likelihood = Likelihood.GaussianRandom(diag=2., ndim=3,seed=42)
 
 	# ndim = 3
 	# mean = scipy.ones(ndim)
 	# covariance = scipy.eye(ndim)
 	# likelihood = Likelihood.Gaussian(mean=mean,covariance=covariance)
-	likelihood.lnlkl = lambda x: squeezed_lnlkl(likelihood,x) # I give a name to my lambda function and I don't care
-
-
-	npts = 100
-	# /!\ The problem with LHS is that you don't now the range of interest of
-	# the likelihood a priori
-	# ranges = scipy.array([[0.5, 0.5, 0.5] , [1.5, 1.5, 1.5]])
-	# ranges = scipy.array([[-1., -1., -1.] , [1., 1., 1.]])
-	ranges = scipy.array([likelihood.argmax-0.5, likelihood.argmax+0.5])
+	# likelihood.lnlkl = lambda x: squeezed_lnlkl(likelihood,x) # I give a name to my lambda function and I don't care
+	# likelihood.lnlkl = lambda x: squeezed_lnlkl_2(likelihood,x) # I give a name to my lambda function and I don't care
 
 	fisher_estimator = FisherEstimator(likelihood=likelihood)
 	fisher_estimation = fisher_estimator(step=0.2)
@@ -400,11 +426,17 @@ if __name__ == '__main__':
 	slice_estimator = SliceEstimator(likelihood=likelihood)
 	slice_estimation = slice_estimator(nsigmas=[1.])
 
-	lhs_estimator = LatinHypercubeEstimator(likelihood=likelihood,ranges=ranges,npts=npts)
-	lhs_estimation = lhs_estimator()
+	# Estimate the size of the box using the Fisher estimation
+	std = scipy.sqrt(scipy.diag(fisher_estimation.covariance))
+	ranges = scipy.array([likelihood.argmax-std, likelihood.argmax+std])
+	# lhs_estimator = LatinHypercubeEstimator(likelihood=likelihood,ranges=ranges,npts=npts)
+	lhs_estimator = LatinHypercubeEstimator(likelihood=likelihood,ranges=ranges,npts=500)
+	lhs_estimation = lhs_estimator(sampling='lhs', fisher_estimation=fisher_estimation)
 
-	sampler = likelihood.sample(nsteps=int(5e3))
-	plot_ellipses(sampler,gaussians=[fisher_estimation,slice_estimation,lhs_estimation],labels=['Fisher','Slice','LHS'],discard=500)
+	gauss_estimation = lhs_estimator(sampling='gaussian', fisher_estimation=fisher_estimation)
+
+	sampler = likelihood.sample(nsteps=int(1e4))
+	plot_ellipses(sampler,gaussians=[fisher_estimation,slice_estimation,lhs_estimation, gauss_estimation],labels=['Fisher','Slice','LHS', 'Gauss Sampling'],discard=500)
 	#plot_ellipses(sampler,gaussians=[fisher_estimation],discard=500)
 	# plot_ellipses(sampler,gaussian=slice_estimation,discard=500)
 	pyplot.show()
